@@ -632,7 +632,7 @@ function Filing({
               id="taxpayerName"
               className="form-input"
               style={{ paddingLeft: '14px' }}
-              value={data.taxpayerName || 'Rahul Sharma'}
+              value={data.taxpayerName ?? ''}
               onChange={(e) => setData({ ...data, taxpayerName: e.target.value })}
               placeholder="e.g. Rahul Sharma"
               required

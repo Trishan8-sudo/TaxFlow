@@ -130,8 +130,9 @@ interface ValidationError {
 const moneyKeys = ['salary', 'interest', 'otherIncome', 'tds', 'deductions'] as const;
 
 function cleanInput(raw: any): CleanedInput {
+  const rawName = raw?.taxpayerName?.toString().trim();
   return {
-    taxpayerName: (raw?.taxpayerName || 'Rahul Sharma').toString().trim().slice(0, 80),
+    taxpayerName: rawName && rawName.length > 0 ? rawName.slice(0, 80) : 'Synthetic Taxpayer',
     salary: raw?.salary === '' || raw?.salary == null ? 0 : Number(raw.salary),
     interest: raw?.interest === '' || raw?.interest == null ? 0 : Number(raw.interest),
     otherIncome: raw?.otherIncome === '' || raw?.otherIncome == null ? 0 : Number(raw.otherIncome),
