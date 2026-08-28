@@ -134,8 +134,11 @@ npm test
 
 ### Optional Environment Variables
 ```bash
-PORT=3000                   # Server port (default: 3000)
-PROCESSING_DELAY_MS=5500    # Worker processing delay in ms (default: 5500)
-WORKER_CONCURRENCY=6        # Worker concurrency (default: 6)
-OPENAI_API_KEY=your_key_here # Optional: OpenAI API Key for dynamic AI explanations
+PORT=3000                     # Server port (default: 3000)
+PROCESSING_DELAY_MS=5500      # Worker processing delay in ms (default: 5500)
+WORKER_CONCURRENCY=6          # Worker concurrency (default: 6)
+GEMINI_API_KEY=your_key_here  # Optional: Google Gemini API Key for dynamic AI explanations
+GEMINI_MODEL=gemini-2.5-flash # Optional: Gemini model (default: gemini-2.5-flash)
+OPENAI_API_KEY=your_key_here  # Optional: OpenAI API Key fallback
 ```
+

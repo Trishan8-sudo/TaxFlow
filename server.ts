@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(root, 'taxflow.db');
+const isVercel = Boolean(process.env.VERCEL);
+const dbPath = isVercel ? path.join('/tmp', 'taxflow.db') : path.join(root, 'taxflow.db');
 const db = new DatabaseSync(dbPath);
 
 try {
@@ -244,8 +245,12 @@ function getFallbackDeadlineExplanation(): string {
   return 'During filing deadlines, millions of citizens try to connect to the same downstream verification services at the exact same minute. In a traditional synchronous system, one slow downstream query makes the citizen wait on a loading spinner until it times out, causing repeated retries. TaxFlow solves this by instantly accepting and securing your return into a durable queue in milliseconds, freeing you immediately while workers process returns smoothly in the background.';
 }
 
-const app = express();
+export const app = express();
 app.use(express.json());
+app.use((_req, _res, next) => {
+  runWorkerTick();
+  next();
+});
 
 // 1. Validate Return
 app.post('/api/returns/validate', (req, res) => {
@@ -383,17 +388,64 @@ app.get('/api/returns/recent/list', (req, res) => {
   res.json(recent);
 });
 
+// AI Completion Helper supporting Google Gemini API key (GEMINI_API_KEY) and OpenAI (OPENAI_API_KEY)
+async function callAiCompletion(prompt: string, maxTokens = 120): Promise<{ text: string | null; usedAI: boolean; provider?: string }> {
+  // 1. Try Google Gemini API
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          maxOutputTokens: maxTokens,
+          temperature: 0.3
+        }
+      });
+      const text = response.text?.trim();
+      if (text) {
+        return { text, usedAI: true, provider: 'gemini' };
+      }
+    } catch (err) {
+      console.warn('Gemini API call failed, falling back:', (err as Error).message);
+    }
+  }
+
+  // 2. Try OpenAI API
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (openaiKey) {
+    try {
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({ apiKey: openaiKey });
+      const response = await openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.3
+      });
+      const text = response.choices[0]?.message?.content?.trim();
+      if (text) {
+        return { text, usedAI: true, provider: 'openai' };
+      }
+    } catch (err) {
+      console.warn('OpenAI API call failed:', (err as Error).message);
+    }
+  }
+
+  return { text: null, usedAI: false };
+}
+
 // 6. AI: Explain Status
 app.post('/api/ai/explain-status', async (req, res) => {
   const { status = 'QUEUED', queuePosition = 0, estimatedSeconds = 5 } = req.body;
   let explanation = getFallbackStatusExplanation(status, queuePosition, estimatedSeconds);
   let usedAI = false;
+  let provider: string | undefined;
 
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      const prompt = `You are a calm, reassuring digital filing assistant for TaxFlow (a prototype demonstrating decoupled asynchronous filing).
+  const prompt = `You are a calm, reassuring digital filing assistant for TaxFlow (a prototype demonstrating decoupled asynchronous filing).
 Explain this filing status in 1-2 friendly sentences (max 45 words):
 Status: ${status}
 Queue Position: ${queuePosition}
@@ -404,24 +456,14 @@ SAFETY RULES:
 - Never give tax advice or invent legal rules.
 - Reassure the user that their return is safely received and they do not need to re-submit or keep the browser open.`;
 
-      const response = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 100,
-        temperature: 0.3
-      });
-
-      const text = response.choices[0]?.message?.content?.trim();
-      if (text) {
-        explanation = text;
-        usedAI = true;
-      }
-    } catch (err) {
-      console.warn('OpenAI status explanation fallback used:', (err as Error).message);
-    }
+  const aiResult = await callAiCompletion(prompt, 100);
+  if (aiResult.text) {
+    explanation = aiResult.text;
+    usedAI = true;
+    provider = aiResult.provider;
   }
 
-  res.json({ explanation, usedAI });
+  res.json({ explanation, usedAI, provider });
 });
 
 // 7. AI: Explain Error
@@ -429,12 +471,9 @@ app.post('/api/ai/explain-error', async (req, res) => {
   const { field = 'general', error = 'Invalid input value' } = req.body;
   let explanation = getFallbackErrorExplanation(field, error);
   let usedAI = false;
+  let provider: string | undefined;
 
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      const prompt = `You are a helpful assistant for TaxFlow, a filing prototype.
+  const prompt = `You are a helpful assistant for TaxFlow, a filing prototype.
 Explain this form validation issue simply in plain English (max 45 words):
 Field: ${field}
 Error: ${error}
@@ -444,57 +483,35 @@ SAFETY RULES:
 - Never calculate actual legal tax liability or give formal tax advice.
 - Focus on what is wrong and what the user should change in simple terms.`;
 
-      const response = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 100,
-        temperature: 0.3
-      });
-
-      const text = response.choices[0]?.message?.content?.trim();
-      if (text) {
-        explanation = text;
-        usedAI = true;
-      }
-    } catch (err) {
-      console.warn('OpenAI error explanation fallback used:', (err as Error).message);
-    }
+  const aiResult = await callAiCompletion(prompt, 100);
+  if (aiResult.text) {
+    explanation = aiResult.text;
+    usedAI = true;
+    provider = aiResult.provider;
   }
 
-  res.json({ explanation, usedAI });
+  res.json({ explanation, usedAI, provider });
 });
 
 // 8. AI: Explain Deadline Bottleneck
 app.post('/api/ai/explain-deadline', async (req, res) => {
   let explanation = getFallbackDeadlineExplanation();
   let usedAI = false;
+  let provider: string | undefined;
 
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      const prompt = `Explain in simple non-technical terms (max 65 words) why tax filing portals slow down near the midnight deadline, and why an asynchronous queue architecture (storing submission first in <50ms and processing in background) prevents timeouts and repeated retries.
+  const prompt = `Explain in simple non-technical terms (max 65 words) why tax filing portals slow down near the midnight deadline, and why an asynchronous queue architecture (storing submission first in <50ms and processing in background) prevents timeouts and repeated retries.
 SAFETY: Never make speculative claims about real Indian Income Tax Department internal hardware. Frame it conceptually.`;
 
-      const response = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 120,
-        temperature: 0.4
-      });
-
-      const text = response.choices[0]?.message?.content?.trim();
-      if (text) {
-        explanation = text;
-        usedAI = true;
-      }
-    } catch (err) {
-      console.warn('OpenAI deadline explanation fallback used:', (err as Error).message);
-    }
+  const aiResult = await callAiCompletion(prompt, 120);
+  if (aiResult.text) {
+    explanation = aiResult.text;
+    usedAI = true;
+    provider = aiResult.provider;
   }
 
-  res.json({ explanation, usedAI });
+  res.json({ explanation, usedAI, provider });
 });
+
 
 // 9. Demo: Deadline Rush Simulation (Synthetic Load)
 app.post('/api/demo/deadline-rush', (req, res) => {
@@ -713,7 +730,11 @@ app.get('/{*splat}', (_, res) => {
   res.sendFile(path.join(root, 'dist', 'index.html'));
 });
 
-const PORT = Number(process.env.PORT) || 3000;
-app.listen(PORT, () => {
-  console.log(`TaxFlow prototype running at http://localhost:${PORT}`);
-});
+if (!isVercel) {
+  const PORT = Number(process.env.PORT) || 3000;
+  app.listen(PORT, () => {
+    console.log(`TaxFlow prototype running at http://localhost:${PORT}`);
+  });
+}
+
+export default app;
