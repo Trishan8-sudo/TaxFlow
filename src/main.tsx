@@ -22,6 +22,18 @@ const formatIndianWords = (n: number | string) => {
   return num.toLocaleString('en-IN');
 };
 
+// Relative timestamp helper
+const formatTimeAgo = (isoDateStr?: string) => {
+  if (!isoDateStr) return 'just now';
+  const diffSec = Math.floor((Date.now() - new Date(isoDateStr).getTime()) / 1000);
+  if (diffSec < 5) return 'just now';
+  if (diffSec < 60) return `${diffSec} seconds ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} minute${diffMin > 1 ? 's' : ''} ago`;
+  const diffHrs = Math.floor(diffMin / 60);
+  return `${diffHrs} hour${diffHrs > 1 ? 's' : ''} ago`;
+};
+
 // API Fetch Helper
 async function api(url: string, opts?: RequestInit) {
   const res = await fetch(url, opts);
@@ -95,8 +107,64 @@ function Notice() {
     <div className="global-notice" role="note">
       <span>⚠️</span>
       <span>
-        <strong>DEMO MODE</strong> — Uses synthetic taxpayer data and a simulated government backend. Not an official Government of India service.
+        <strong>DEMO PROTOTYPE</strong> — Uses synthetic taxpayer data and simulated government processing. Not an official Government of India service.
       </span>
+    </div>
+  );
+}
+
+// Interactive Demo Controls Bar (Feature 3, 6, 7)
+function DemoControlsBar({
+  networkInterrupted,
+  setNetworkInterrupted,
+  ambiguousSubmit,
+  setAmbiguousSubmit,
+  dependencyState,
+  setDependencyState
+}: {
+  networkInterrupted: boolean;
+  setNetworkInterrupted: (val: boolean) => void;
+  ambiguousSubmit: boolean;
+  setAmbiguousSubmit: (val: boolean) => void;
+  dependencyState: string;
+  setDependencyState: (val: string) => void;
+}) {
+  return (
+    <div className="demo-controls-bar">
+      <div className="demo-controls-inner">
+        <span className="demo-bar-badge">⚡ DEMO SIMULATOR CONTROLS</span>
+        
+        <label className="demo-control-item" title="Simulates network save failure while preserving local form state">
+          <input
+            type="checkbox"
+            checked={networkInterrupted}
+            onChange={(e) => setNetworkInterrupted(e.target.checked)}
+          />
+          <span>Simulate Network Interruption</span>
+        </label>
+
+        <label className="demo-control-item" title="Simulates network drop after submission to verify automatic idempotency recovery">
+          <input
+            type="checkbox"
+            checked={ambiguousSubmit}
+            onChange={(e) => setAmbiguousSubmit(e.target.checked)}
+          />
+          <span>Simulate Ambiguous Submit Failure</span>
+        </label>
+
+        <div className="demo-control-item">
+          <span>Downstream Dependency:</span>
+          <select
+            value={dependencyState}
+            onChange={(e) => setDependencyState(e.target.value)}
+            className="demo-select"
+          >
+            <option value="AVAILABLE">🟢 AVAILABLE</option>
+            <option value="SLOW">🟡 SLOW</option>
+            <option value="UNAVAILABLE">🔴 UNAVAILABLE</option>
+          </select>
+        </div>
+      </div>
     </div>
   );
 }
@@ -118,52 +186,60 @@ function Home() {
           <span>🛡️</span> DEADLINE-RESILIENT FILING PROTOTYPE
         </div>
         <h1 className="hero-title">
-          File once.<br />
-          <span>Don't fight the deadline.</span>
+          Citizens should not lose work<br />
+          <span>because the system is slow.</span>
         </h1>
         <p className="hero-subtitle">
-          A prototype for making high-volume tax filing more resilient. Your return can be safely received first in milliseconds and processed in the background.
+          TaxFlow makes the tax filing journey resilient to deadline rush congestion, slow dependencies, network drops, and session timeouts.
         </p>
         <div className="hero-actions">
           <a href="#/file" className="btn btn-primary btn-lg">
-            Start Filing →
+            Start Filing Return →
           </a>
           <a href="#/how" className="btn btn-secondary btn-lg">
-            See How It Works
+            See Architecture & How It Works
           </a>
         </div>
       </section>
 
       <div className="features-grid">
         <div className="feature-card">
+          <div className="feature-icon">💾</div>
+          <h3>1. Autosave & Resume</h3>
+          <p>
+            Your form progress saves automatically in real-time. If you refresh, leave, or lose connection, your draft is ready to resume.
+          </p>
+        </div>
+
+        <div className="feature-card">
+          <div className="feature-icon">🔒</div>
+          <h3>2. Retry-Safe Idempotency</h3>
+          <p>
+            Accidental double-clicks or retries after network timeouts safely return your existing submission without creating duplicates.
+          </p>
+        </div>
+
+        <div className="feature-card">
           <div className="feature-icon">⚡</div>
-          <h3>1. Instant Submission</h3>
+          <h3>3. Decoupled Queue</h3>
           <p>
-            Receive a durable receipt reference in milliseconds (<code>TX-DEMO-XXXXXX</code>) without hanging on synchronous downstream database calls.
+            Submissions are safely received in milliseconds (&lt;50ms) and processed asynchronously in the background by persistent queue workers.
           </p>
         </div>
 
         <div className="feature-card">
-          <div className="feature-icon">🛡️</div>
-          <h3>2. Decoupled Processing</h3>
+          <div className="feature-icon">✨</div>
+          <h3>4. AI Plain-Language Status</h3>
           <p>
-            Your validated return enters a persistent queue. Background workers absorb traffic spikes smoothly without crashing the citizen experience.
-          </p>
-        </div>
-
-        <div className="feature-card">
-          <div className="feature-icon">⏱️</div>
-          <h3>3. Track Anytime</h3>
-          <p>
-            You don't need to keep the browser open or refresh frantically. Check status anytime to view your synthetic completion acknowledgement.
+            OpenAI-powered explanations reassure citizens on queue status, validation issues, and next steps without legal jargon.
           </p>
         </div>
       </div>
 
       <div className="card">
-        <h2 className="card-title">Experience the Prototype</h2>
+        <h2 className="card-title">Experience the Resilient Citizen Flow</h2>
         <p className="card-subtitle">
-          Test the resilient citizen journey with sample synthetic taxpayer profiles or trigger error handling.
+          Select a synthetic demo profile to start filing or trigger validation error handling:
         </p>
         <div className="presets-buttons">
           {presets.map((p, idx) => (
@@ -191,7 +267,7 @@ function Home() {
               </p>
             </div>
             <a href="#/demo" className="btn btn-secondary btn-sm">
-              View Engineering Load Test →
+              View Engineering Rush Dashboard →
             </a>
           </div>
         </div>
@@ -200,23 +276,127 @@ function Home() {
   );
 }
 
-// Filing Form Component
-function Filing() {
+// Filing Form Component with Autosave, Resume, Network Interruption & Idempotency Recovery
+function Filing({
+  networkInterrupted,
+  ambiguousSubmit
+}: {
+  networkInterrupted: boolean;
+  ambiguousSubmit: boolean;
+}) {
+  // Stable Draft ID stored in localStorage for persistent session survival
+  const [draftId] = useState<string>(() => {
+    let savedId = localStorage.getItem('taxflow_draft_id');
+    if (!savedId) {
+      savedId = `DF-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+      localStorage.setItem('taxflow_draft_id', savedId);
+    }
+    return savedId;
+  });
+
   const [step, setStep] = useState(1);
   const [data, setData] = useState<any>(() => {
-    const saved = sessionStorage.getItem('taxflow_preset');
-    if (saved) {
+    const savedPreset = sessionStorage.getItem('taxflow_preset');
+    if (savedPreset) {
       try {
-        return JSON.parse(saved);
+        return JSON.parse(savedPreset);
       } catch {}
     }
     return presets[0].data;
   });
 
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'interrupted'>('idle');
+  const [lastSavedTime, setLastSavedTime] = useState<string>('');
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [resumeData, setResumeData] = useState<any>(null);
+
   const [validation, setValidation] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [errorFocusField, setErrorFocusField] = useState('');
+  const [ambiguousResult, setAmbiguousResult] = useState<any>(null);
+
+  // Check for saved draft on mount for Resume Filing (Feature 2)
+  useEffect(() => {
+    if (!draftId) return;
+    api(`/api/drafts/${draftId}`)
+      .then((res) => {
+        if (res && res.data && res.status === 'DRAFT') {
+          setResumeData(res);
+          setShowResumeModal(true);
+        }
+      })
+      .catch(() => {});
+  }, [draftId]);
+
+  // Debounced Autosave (Feature 1)
+  useEffect(() => {
+    if (!draftId) return;
+    setAutosaveStatus('saving');
+
+    const timer = setTimeout(async () => {
+      if (networkInterrupted) {
+        setAutosaveStatus('interrupted');
+        return;
+      }
+
+      try {
+        const res = await api('/api/drafts/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ draftId, data: { ...data, step } })
+        });
+        setAutosaveStatus('saved');
+        setLastSavedTime(res.updatedAt || new Date().toISOString());
+      } catch {
+        setAutosaveStatus('interrupted');
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [data, step, draftId, networkInterrupted]);
+
+  // Retry autosave when network recovers from interruption (Feature 3)
+  useEffect(() => {
+    if (!networkInterrupted && autosaveStatus === 'interrupted') {
+      api('/api/drafts/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draftId, data: { ...data, step } })
+      })
+        .then((res) => {
+          setAutosaveStatus('saved');
+          setLastSavedTime(res.updatedAt || new Date().toISOString());
+        })
+        .catch(() => {});
+    }
+  }, [networkInterrupted, autosaveStatus, draftId, data, step]);
+
+  const handleResumeDraft = () => {
+    if (resumeData?.data) {
+      setData(resumeData.data);
+      if (resumeData.data.step) setStep(resumeData.data.step);
+      if (resumeData.updatedAt) setLastSavedTime(resumeData.updatedAt);
+      setAutosaveStatus('saved');
+    }
+    setShowResumeModal(false);
+  };
+
+  const handleStartNewReturn = () => {
+    api('/api/drafts/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draftId })
+    }).catch(() => {});
+
+    const newId = `DF-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    localStorage.setItem('taxflow_draft_id', newId);
+    sessionStorage.removeItem('taxflow_preset');
+    setData(presets[0].data);
+    setValidation(null);
+    setStep(1);
+    setShowResumeModal(false);
+  };
 
   const loadPreset = (presetData: any) => {
     setData(presetData);
@@ -244,25 +424,59 @@ function Filing() {
   const handleSubmit = async () => {
     setBusy(true);
     setErrorMsg('');
-    try {
-      // Idempotency key ensures duplicate clicks return the same submission
-      const idempotencyKey = sessionStorage.getItem('taxflow_sub_key') || crypto.randomUUID();
-      sessionStorage.setItem('taxflow_sub_key', idempotencyKey);
+    setAmbiguousResult(null);
 
+    // Stable Idempotency Key tied to submission/draft (Feature 4)
+    const idempotencyKey = sessionStorage.getItem('taxflow_sub_key') || `SUB-${crypto.randomUUID()}`;
+    sessionStorage.setItem('taxflow_sub_key', idempotencyKey);
+
+    // Feature 6: Simulate Ambiguous Network Failure (Submit sent, but client response drops)
+    if (ambiguousSubmit) {
+      try {
+        await api('/api/returns/submit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey
+          },
+          body: JSON.stringify({ ...data, idempotencyKey, draftId })
+        });
+      } catch {}
+
+      setErrorMsg('Simulated network failure: Response timed out after submit. Recovering submission...');
+
+      setTimeout(async () => {
+        try {
+          const check = await api(`/api/returns/by-key/${idempotencyKey}`);
+          if (check.found) {
+            setAmbiguousResult(check);
+            sessionStorage.removeItem('taxflow_sub_key');
+            sessionStorage.removeItem('taxflow_preset');
+          } else {
+            setErrorMsg('No submission found. Please try submitting again.');
+          }
+        } catch {
+          setErrorMsg('Unable to verify submission status. Please retry.');
+        }
+        setBusy(false);
+      }, 1000);
+      return;
+    }
+
+    // Normal Instant Submission Flow
+    try {
       const res = await api('/api/returns/submit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Idempotency-Key': idempotencyKey
         },
-        body: JSON.stringify({ ...data, idempotencyKey })
+        body: JSON.stringify({ ...data, idempotencyKey, draftId })
       });
 
-      // Clear idempotency key on success
       sessionStorage.removeItem('taxflow_sub_key');
       sessionStorage.removeItem('taxflow_preset');
 
-      // Save to local recent history
       try {
         const recent = JSON.parse(localStorage.getItem('taxflow_recent_refs') || '[]');
         if (!recent.includes(res.referenceId)) {
@@ -271,7 +485,6 @@ function Filing() {
         }
       } catch {}
 
-      // Immediately navigate to status page
       location.hash = `#/status/${res.referenceId}`;
     } catch (err: any) {
       setErrorMsg(err.message || 'Unable to submit right now. Please verify your details.');
@@ -279,24 +492,103 @@ function Filing() {
     }
   };
 
+  // Ambiguous Network Failure Recovery View (Feature 6)
+  if (ambiguousResult) {
+    return (
+      <main className="card" role="main">
+        <div className="ambiguous-recovery-box">
+          <div className="check-hero-icon">✓</div>
+          <h2 className="card-title" style={{ color: '#065f46' }}>
+            We found your previous submission.
+          </h2>
+          <p className="card-subtitle" style={{ fontSize: '16px', color: '#047857' }}>
+            Your return was already safely received by TaxFlow before the network response was interrupted.
+          </p>
+
+          <div className="reference-card" style={{ margin: '24px 0' }}>
+            <div className="ref-details">
+              <span>Durable Reference ID</span>
+              <strong>{ambiguousResult.referenceId}</strong>
+            </div>
+          </div>
+
+          <div className="dont-retry-badge" style={{ margin: '20px 0' }}>
+            🔒 You do not need to submit again.
+          </div>
+
+          <div className="actions-row" style={{ marginTop: '24px' }}>
+            <a href={`#/status/${ambiguousResult.referenceId}`} className="btn btn-primary btn-lg">
+              Track Return Status & Acknowledgement →
+            </a>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="card" role="main">
-      {/* Quick Presets Bar */}
-      <div className="presets-container">
-        <span className="presets-label">⚡ Quick Fill Synthetic Demo Profiles:</span>
-        <div className="presets-buttons">
-          {presets.map((p, idx) => (
-            <button
-              key={idx}
-              type="button"
-              className={`preset-chip ${p.error ? 'error-preset' : ''}`}
-              onClick={() => loadPreset(p.data)}
-            >
-              {p.label}
+      {/* Feature 2: Resume Filing Banner / Modal */}
+      {showResumeModal && (
+        <div className="resume-banner" role="dialog" aria-labelledby="resume-title">
+          <div className="resume-header">
+            <span className="resume-icon">👋</span>
+            <div>
+              <h3 id="resume-title">Welcome back!</h3>
+              <p>
+                Your saved return is ready to continue. Last saved:{' '}
+                <strong>{formatTimeAgo(resumeData?.updatedAt)}</strong>
+              </p>
+            </div>
+          </div>
+          <div className="resume-actions">
+            <button type="button" className="btn btn-primary btn-sm" onClick={handleResumeDraft}>
+              Resume Filing →
             </button>
-          ))}
+            <button type="button" className="btn btn-outline btn-sm" onClick={handleStartNewReturn}>
+              Start New Return
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Header Bar with Quick Presets & Autosave Status Indicator */}
+      <div className="filing-header-bar">
+        <div className="presets-container" style={{ margin: 0, flex: 1 }}>
+          <span className="presets-label">⚡ Quick Fill Demo Profiles:</span>
+          <div className="presets-buttons">
+            {presets.map((p, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className={`preset-chip ${p.error ? 'error-preset' : ''}`}
+                onClick={() => loadPreset(p.data)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Feature 1 & 3: Autosave Status Indicator */}
+        <div className={`autosave-status-pill ${autosaveStatus}`}>
+          {autosaveStatus === 'saving' && <span>⏳ Saving draft...</span>}
+          {autosaveStatus === 'saved' && (
+            <span>Saved ✓ <small>({formatTimeAgo(lastSavedTime)})</small></span>
+          )}
+          {autosaveStatus === 'interrupted' && (
+            <span>⚠️ Connection interrupted <small>(Progress safe & auto-retrying)</small></span>
+          )}
         </div>
       </div>
+
+      {/* Feature 3: Connection Interrupted Banner */}
+      {networkInterrupted && (
+        <div className="warning-banner" style={{ margin: '16px 0' }}>
+          <span>📶 Connection interrupted</span>
+          <span>Your local progress is safe in browser memory. We'll retry saving automatically when reconnected.</span>
+        </div>
+      )}
 
       {/* Stepper Progress Bar */}
       <div className="stepper-header" aria-label="Filing steps">
@@ -557,8 +849,8 @@ function Filing() {
               </div>
 
               <div className="card" style={{ background: '#f8faf8', padding: '20px', margin: '20px 0' }}>
-                <p style={{ fontSize: '14px', color: '#0d4a3e', fontWeight: 600 }}>
-                  ⚡ When you submit, TaxFlow immediately returns your safe reference ID without making you wait for downstream processing.
+                <p style={{ fontSize: '14px', color: '#0d4a3e', fontWeight: 600, margin: 0 }}>
+                  ⚡ When you submit, TaxFlow immediately returns your safe reference ID (&lt;50ms) without keeping your browser waiting for downstream processing.
                 </p>
               </div>
 
@@ -591,7 +883,7 @@ function Filing() {
       {errorMsg && (
         <div className="error-banner" style={{ marginTop: '20px' }} role="alert">
           <p>
-            <strong>Error:</strong> {errorMsg}
+            <strong>Status Notice:</strong> {errorMsg}
           </p>
         </div>
       )}
@@ -640,7 +932,7 @@ function ValidationFailureView({ errors, onFix }: { errors: any[]; onFix: () => 
               <strong>1. What went wrong:</strong> {err.message}
             </p>
             <p className="error-suggestion">
-              <strong>2. Why it matters:</strong> {err.code === 'TDS_EXCEEDS_INCOME' ? 'TDS deducted cannot exceed the gross income in this demo.' : err.code === 'DEDUCTION_LIMIT_EXCEEDED' ? 'Exceeds the prototype synthetic threshold of ₹1,50,000.' : 'Amounts must be valid positive numbers.'}
+              <strong>2. Why it matters:</strong> {err.code === 'TDS_EXCEEDS_INCOME' ? 'TDS deducted cannot exceed gross income in this demo.' : err.code === 'DEDUCTION_LIMIT_EXCEEDED' ? 'Exceeds the prototype synthetic threshold of ₹1,50,000.' : 'Amounts must be valid positive numbers.'}
             </p>
             <p className="error-suggestion">
               <strong>3. What you should change:</strong> {err.suggestion}
@@ -766,18 +1058,30 @@ function StatusView({ referenceId }: { referenceId: string }) {
 
   return (
     <main role="main">
-      {/* Hero Receipt Header */}
+      {/* Hero Submission Confirmation Banner (Feature 5) */}
       <div className="receipt-header-banner">
         <h2>{isCompleted ? '✓ Processing Completed' : '✓ Submission safely received'}</h2>
         <p>
           {isCompleted
             ? 'Your synthetic return has been processed in this prototype. Your acknowledgement is ready.'
-            : 'Your return has been received by TaxFlow and placed into the persistent processing queue.'}
+            : 'Your return has been recorded and placed into the processing workflow.'}
         </p>
         <div className="dont-retry-badge">
           <span>🔒</span> You don't need to submit again.
         </div>
       </div>
+
+      {/* Feature 7: Downstream Graceful Failure Notice */}
+      {data.dependencyNotice && (
+        <div className="warning-banner" style={{ margin: '16px 0', borderLeft: '4px solid #d97706' }}>
+          <div style={{ fontWeight: 700, fontSize: '15px', color: '#92400e', marginBottom: '4px' }}>
+            🛡️ Downstream Dependency Notice (Graceful Failure Demo)
+          </div>
+          <p style={{ margin: 0, fontSize: '14px', color: '#78350f' }}>
+            {data.dependencyNotice}
+          </p>
+        </div>
+      )}
 
       <div className="card">
         {/* Reference Number Card */}
@@ -826,7 +1130,7 @@ function StatusView({ referenceId }: { referenceId: string }) {
           </li>
         </ol>
 
-        {/* Live Queue Position Indicator */}
+        {/* Live Queue Position Indicator (Feature 10) */}
         {!isCompleted && (
           <div className="card" style={{ background: '#f8faf8', border: '1px solid #e2e8f0', margin: '20px 0', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
@@ -835,7 +1139,7 @@ function StatusView({ referenceId }: { referenceId: string }) {
                   {isProcessing ? '⚡ Status: Currently Processing' : `📊 Queue Position: ${data.queuePosition}`}
                 </strong>
                 <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-                  Estimated remaining time: ~{data.estimatedSeconds}s (prototype estimate)
+                  Estimated processing time: ~{data.estimatedSeconds}s (prototype estimate)
                 </p>
               </div>
               <span className="prototype-tag">Live Polling (1.2s)</span>
@@ -1010,7 +1314,7 @@ function TrackView() {
   );
 }
 
-// How It Works Architectural Explanation Page
+// How It Works Architectural Explanation Page (Feature 13)
 function HowItWorks() {
   const [aiDeadlineExp, setAiDeadlineExp] = useState('');
   const [loadingAi, setLoadingAi] = useState(false);
@@ -1036,7 +1340,7 @@ function HowItWorks() {
           The deadline shouldn't be a race against a loading spinner.
         </h1>
         <p className="hero-subtitle">
-          TaxFlow demonstrates how separating submission from downstream processing guarantees instant citizen confirmation and deadline resilience.
+          TaxFlow separates the citizen's filing interaction from slower downstream processing to guarantee zero lost work and complete deadline resilience.
         </p>
       </section>
 
@@ -1055,7 +1359,7 @@ function HowItWorks() {
           <div className="flow-step">3. Synchronous downstream DB & Auth verification</div>
           <div className="flow-arrow">↓</div>
           <div className="flow-step error">
-            💥 <strong>Timeout / Server Congestion:</strong> Citizen faces loading spinner, request drops, citizen repeatedly retries.
+            💥 <strong>Timeout / Congestion:</strong> Citizen faces loading spinner, request drops, citizen repeatedly retries.
           </div>
         </div>
 
@@ -1077,14 +1381,17 @@ function HowItWorks() {
         </div>
       </div>
 
-      {/* Deep-dive Card */}
+      {/* Feature Deep-dive */}
       <div className="card">
-        <h2 className="card-title">Why does filing near the deadline feel slower?</h2>
-        <p className="card-subtitle">
-          High concurrent demand forces traditional synchronous servers to keep thousands of browser connections open simultaneously.
-        </p>
+        <h2 className="card-title">TaxFlow Resilience Principles</h2>
+        <ul className="resilience-list">
+          <li><strong>Autosave & Resume:</strong> Progress is persisted to database before moving on. Refreshing or leaving never erases input.</li>
+          <li><strong>Idempotency:</strong> Duplicate submission requests return the same reference ID without creating duplicate returns.</li>
+          <li><strong>Graceful Degradation:</strong> If downstream dependencies slow down or pause, submissions remain safe in queue.</li>
+          <li><strong>Asynchronous Decoupling:</strong> Processing continues independently even after the citizen closes the page.</li>
+        </ul>
 
-        <div className="actions-row">
+        <div className="actions-row" style={{ marginTop: '24px' }}>
           <button type="button" className="btn btn-secondary" onClick={handleAskAI} disabled={loadingAi}>
             {loadingAi ? 'Asking AI Assistant…' : '✨ Ask AI: Why does queue architecture prevent deadline crashes?'}
           </button>
@@ -1108,8 +1415,14 @@ function HowItWorks() {
   );
 }
 
-// Deadline Rush Simulation Dashboard (Demo / Engineering)
-function DemoDashboard() {
+// Deadline Rush Simulation Dashboard (Demo / Engineering - Feature 12)
+function DemoDashboard({
+  dependencyState,
+  setDependencyState
+}: {
+  dependencyState: string;
+  setDependencyState: (val: string) => void;
+}) {
   const [metrics, setMetrics] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [rushMsg, setRushMsg] = useState('');
@@ -1141,7 +1454,6 @@ function DemoDashboard() {
       });
       setRushMsg(`Successfully injected ${count.toLocaleString()} synthetic returns into the persistent queue!`);
       if (res.sampleReferenceId) setSampleRef(res.sampleReferenceId);
-      // Trigger instant metrics refresh
       api('/api/demo/metrics').then(setMetrics).catch(() => {});
     } catch (err: any) {
       setRushMsg(err.message || 'Rush simulation failed.');
@@ -1164,7 +1476,9 @@ function DemoDashboard() {
         completed: 0,
         failed: 0,
         activeWorkers: 0,
+        activeDrafts: 0,
         workerConfig: prev?.workerConfig || { delayMs: 5500, concurrency: 6, failureRate: 0.02 },
+        mockDependencyState: 'AVAILABLE',
         averageQueueSeconds: 0
       }));
     } catch {
@@ -1193,8 +1507,19 @@ function DemoDashboard() {
         body: JSON.stringify({ delayMs, concurrency })
       });
       if (res?.workerConfig) {
-        setMetrics((prev: any) => prev ? { ...prev, workerConfig: res.workerConfig } : prev);
+        setMetrics((prev: any) => (prev ? { ...prev, workerConfig: res.workerConfig } : prev));
       }
+    } catch {}
+  };
+
+  const handleSetDependency = async (st: string) => {
+    setDependencyState(st);
+    try {
+      await api('/api/demo/dependency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: st })
+      });
     } catch {}
   };
 
@@ -1210,14 +1535,47 @@ function DemoDashboard() {
       </div>
       <h2 className="card-title">Simulate Deadline Rush</h2>
       <p className="card-subtitle">
-        Inject synthetic filing load into TaxFlow's real SQLite persistent queue to observe worker throughput. No government infrastructure is contacted.
+        Inject synthetic filing load into TaxFlow's real SQLite persistent queue to observe worker throughput under pressure.
       </p>
+
+      {/* Feature 7: Downstream Dependency Control */}
+      <div className="card" style={{ background: '#fefce8', borderColor: '#fef08a', padding: '20px', marginBottom: '20px' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#854d0e', marginBottom: '8px' }}>
+          🛡️ Downstream Dependency Simulator (Graceful Failure Demo)
+        </h3>
+        <p style={{ fontSize: '13px', color: '#a16207', marginBottom: '14px' }}>
+          Test how TaxFlow handles downstream service slowdowns or outages without failing citizen submissions.
+        </p>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${dependencyState === 'AVAILABLE' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => handleSetDependency('AVAILABLE')}
+          >
+            🟢 AVAILABLE (Normal)
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${dependencyState === 'SLOW' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => handleSetDependency('SLOW')}
+          >
+            🟡 SLOW (Delayed Workers)
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${dependencyState === 'UNAVAILABLE' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => handleSetDependency('UNAVAILABLE')}
+          >
+            🔴 UNAVAILABLE (Busy / Paused Workers)
+          </button>
+        </div>
+      </div>
 
       {/* Rush Injector Buttons & Custom Form */}
       <div className="presets-container" style={{ background: '#fdf2f8', borderColor: '#fbcfe8', padding: '16px 20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
           <span className="presets-label" style={{ color: '#9d174d', fontWeight: 700 }}>
-            🚀 Quick Presets:
+            🚀 Synthetic Load Presets:
           </span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
@@ -1226,7 +1584,6 @@ function DemoDashboard() {
               style={{ background: 'white', color: '#475569', borderColor: '#cbd5e1' }}
               onClick={handleSeed}
               disabled={busy}
-              title="Seed 2 sample demo returns"
             >
               🌱 Seed Demo Samples
             </button>
@@ -1336,8 +1693,8 @@ function DemoDashboard() {
               <div className="metric-value completed">{metrics.completed.toLocaleString()}</div>
             </div>
             <div className="metric-box">
-              <span className="metric-label">Simulated Retries</span>
-              <div className="metric-value failed">{metrics.failed.toLocaleString()}</div>
+              <span className="metric-label">Active Drafts</span>
+              <div className="metric-value" style={{ color: '#6366f1' }}>{metrics.activeDrafts || 0}</div>
             </div>
             <div className="metric-box">
               <span className="metric-label">Avg Queue Wait</span>
@@ -1418,9 +1775,33 @@ function DemoDashboard() {
   );
 }
 
-// App Router
+// Main App Container
 function App() {
   const [route, setRoute] = useState(() => location.hash.slice(1) || '/');
+  const [networkInterrupted, setNetworkInterrupted] = useState(false);
+  const [ambiguousSubmit, setAmbiguousSubmit] = useState(false);
+  const [dependencyState, setDependencyStateLocal] = useState('AVAILABLE');
+
+  // Fetch current backend dependency state on mount
+  useEffect(() => {
+    api('/api/demo/dependency')
+      .then((res) => {
+        if (res?.state) setDependencyStateLocal(res.state);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Update dependency state both locally and on backend server
+  const setDependencyState = async (newState: string) => {
+    setDependencyStateLocal(newState);
+    try {
+      await api('/api/demo/dependency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: newState })
+      });
+    } catch {}
+  };
 
   useEffect(() => {
     const handleHash = () => setRoute(location.hash.slice(1) || '/');
@@ -1429,10 +1810,24 @@ function App() {
   }, []);
 
   const renderContent = () => {
-    if (route === '/file') return <Filing />;
+    if (route === '/file') {
+      return (
+        <Filing
+          networkInterrupted={networkInterrupted}
+          ambiguousSubmit={ambiguousSubmit}
+        />
+      );
+    }
     if (route === '/track') return <TrackView />;
     if (route === '/how') return <HowItWorks />;
-    if (route === '/demo') return <DemoDashboard />;
+    if (route === '/demo') {
+      return (
+        <DemoDashboard
+          dependencyState={dependencyState}
+          setDependencyState={setDependencyState}
+        />
+      );
+    }
     if (route.startsWith('/status/')) {
       const ref = route.replace('/status/', '');
       return <StatusView referenceId={ref} />;
@@ -1444,11 +1839,19 @@ function App() {
     <>
       <Header currentRoute={route} />
       <Notice />
+      <DemoControlsBar
+        networkInterrupted={networkInterrupted}
+        setNetworkInterrupted={setNetworkInterrupted}
+        ambiguousSubmit={ambiguousSubmit}
+        setAmbiguousSubmit={setAmbiguousSubmit}
+        dependencyState={dependencyState}
+        setDependencyState={setDependencyState}
+      />
       <main className="page-content">{renderContent()}</main>
       <footer className="app-footer">
         <div className="footer-inner">
           <p>
-            <strong>TaxFlow Prototype</strong> — File once. Don't fight the deadline.
+            <strong>TaxFlow Prototype</strong> — Citizens should not lose work because the system is slow.
           </p>
           <p>
             Demonstration prototype for high-volume decoupled tax filing. Uses synthetic data and simulated downstream processing. Not an official Government of India service.

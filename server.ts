@@ -23,6 +23,8 @@ let workerConfig = {
   failureRate: 0.02 // 2% synthetic downstream retryable anomaly rate
 };
 
+let mockDependencyState: 'AVAILABLE' | 'SLOW' | 'UNAVAILABLE' = 'AVAILABLE';
+
 // Initialize schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS returns (
@@ -63,8 +65,18 @@ db.exec(`
     FOREIGN KEY (returnId) REFERENCES returns (id)
   );
 
+  CREATE TABLE IF NOT EXISTS drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    draftId TEXT UNIQUE NOT NULL,
+    data TEXT NOT NULL,
+    status TEXT DEFAULT 'DRAFT',
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_returns_ref ON returns (referenceId);
   CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status, id);
+  CREATE INDEX IF NOT EXISTS idx_drafts_id ON drafts (draftId);
 `);
 
 // Safe column migrations in case existing table misses new columns
@@ -247,16 +259,108 @@ function getFallbackDeadlineExplanation(): string {
 
 export const app = express();
 app.use(express.json());
-app.use((_req, _res, next) => {
-  runWorkerTick();
-  next();
-});
+
+
 
 // 1. Validate Return
 app.post('/api/returns/validate', (req, res) => {
   const result = validateReturn(req.body);
   res.json(result);
 });
+
+// --- DRAFTS API (Feature 1 & Feature 2) ---
+app.post('/api/drafts/save', (req, res) => {
+  const { draftId, data } = req.body;
+  if (!draftId || !data) {
+    return res.status(400).json({ message: 'draftId and data are required' });
+  }
+
+  const now = new Date().toISOString();
+  const serialized = JSON.stringify(data);
+
+  try {
+    const existing = db.prepare('SELECT id FROM drafts WHERE draftId = ?').get(draftId) as any;
+    if (existing) {
+      db.prepare('UPDATE drafts SET data = ?, updatedAt = ? WHERE draftId = ?').run(serialized, now, draftId);
+    } else {
+      db.prepare("INSERT INTO drafts (draftId, data, status, createdAt, updatedAt) VALUES (?, ?, 'DRAFT', ?, ?)").run(draftId, serialized, now, now);
+    }
+    res.json({ success: true, draftId, updatedAt: now });
+  } catch (err: any) {
+    console.error('Draft save error:', err);
+    res.status(500).json({ message: 'Failed to autosave draft' });
+  }
+});
+
+app.get('/api/drafts/:draftId', (req, res) => {
+  const { draftId } = req.params;
+  const draft = db.prepare("SELECT * FROM drafts WHERE draftId = ? AND status = 'DRAFT'").get(draftId) as any;
+
+  if (!draft) {
+    return res.status(404).json({ message: 'No active draft found' });
+  }
+
+  try {
+    const parsedData = JSON.parse(draft.data);
+    res.json({
+      draftId: draft.draftId,
+      data: parsedData,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+      status: draft.status
+    });
+  } catch {
+    res.status(500).json({ message: 'Error parsing draft data' });
+  }
+});
+
+app.post('/api/drafts/clear', (req, res) => {
+  const { draftId } = req.body;
+  if (draftId) {
+    db.prepare("UPDATE drafts SET status = 'SUBMITTED', updatedAt = ? WHERE draftId = ?").run(new Date().toISOString(), draftId);
+  }
+  res.json({ success: true });
+});
+
+// --- AMBIGUOUS SUBMISSION RECOVERY API (Feature 6) ---
+app.get('/api/returns/by-key/:idempotencyKey', (req, res) => {
+  const { idempotencyKey } = req.params;
+  const existing = db.prepare('SELECT referenceId, taxpayerName, processingStatus, createdAt FROM returns WHERE idempotencyKey = ?').get(idempotencyKey) as any;
+
+  if (existing) {
+    return res.json({
+      found: true,
+      referenceId: existing.referenceId,
+      taxpayerName: existing.taxpayerName,
+      status: existing.processingStatus,
+      createdAt: existing.createdAt,
+      message: 'We found your previous submission.'
+    });
+  }
+
+  res.json({ found: false });
+});
+
+// --- MOCK DEPENDENCY CONTROL API (Feature 7) ---
+app.get('/api/demo/dependency', (_req, res) => {
+  res.json({ state: mockDependencyState });
+});
+
+app.post('/api/demo/dependency', (req, res) => {
+  const { state } = req.body;
+  if (['AVAILABLE', 'SLOW', 'UNAVAILABLE'].includes(state)) {
+    mockDependencyState = state;
+    // When freezing workers, requeue any in-flight PROCESSING jobs back to QUEUED
+    // so they don't silently complete while the dependency is unavailable
+    if (state === 'UNAVAILABLE') {
+      const now = new Date().toISOString();
+      db.prepare("UPDATE jobs SET status = 'QUEUED', startedAt = NULL WHERE status = 'PROCESSING'").run();
+      db.prepare("UPDATE returns SET processingStatus = 'QUEUED', updatedAt = ? WHERE processingStatus = 'PROCESSING'").run(now);
+    }
+  }
+  res.json({ success: true, state: mockDependencyState });
+});
+
 
 // 2. Submit Return (Idempotent, Instant Response)
 app.post('/api/returns/submit', (req, res) => {
@@ -312,6 +416,13 @@ app.post('/api/returns/submit', (req, res) => {
       VALUES (?, 'QUEUED', 0, ?)
     `).run(returnId, now);
 
+    // Mark draft as submitted if draftId provided
+    if (req.body.draftId) {
+      try {
+        db.prepare("UPDATE drafts SET status = 'SUBMITTED', updatedAt = ? WHERE draftId = ?").run(now, req.body.draftId);
+      } catch {}
+    }
+
     // CRITICAL: Respond immediately (<20ms). Do NOT wait for worker processing!
     res.status(201).json({
       status: 'RECEIVED',
@@ -349,7 +460,8 @@ app.get('/api/returns/:referenceId', (req, res) => {
       WHERE status = 'QUEUED' AND id < ?
     `).get(job.id) as any).c;
     queuePosition = countAhead + 1;
-    estimatedSeconds = Math.max(1, Math.ceil((queuePosition / Math.max(1, workerConfig.concurrency)) * (workerConfig.delayMs / 1000)));
+    const effectiveDelay = mockDependencyState === 'SLOW' ? workerConfig.delayMs * 2.5 : workerConfig.delayMs;
+    estimatedSeconds = Math.max(1, Math.ceil((queuePosition / Math.max(1, workerConfig.concurrency)) * (effectiveDelay / 1000)));
   } else if (returnRecord.processingStatus === 'PROCESSING') {
     queuePosition = 0;
     estimatedSeconds = Math.max(1, Math.ceil(workerConfig.delayMs / 2000));
@@ -361,8 +473,14 @@ app.get('/api/returns/:referenceId', (req, res) => {
     acknowledgement: ack,
     queuePosition,
     estimatedSeconds,
+    mockDependencyState,
+    dependencyNotice: mockDependencyState === 'UNAVAILABLE'
+      ? "Your submission is safe. One of the processing services is temporarily busy. We'll retry automatically."
+      : null,
     statusNotice: returnRecord.processingStatus === 'COMPLETED'
       ? 'Processing completed. Your synthetic acknowledgement is ready.'
+      : mockDependencyState === 'UNAVAILABLE'
+      ? "Your submission is safe. Downstream processing service is temporarily busy, workers will retry automatically."
       : "Your return is safely queued. You don't need to submit again."
   });
 });
@@ -579,6 +697,7 @@ app.get('/api/demo/metrics', (req, res) => {
 
   const totalReceived = (db.prepare('SELECT count(*) as total FROM returns').get() as any).total;
   const activeWorkers = (db.prepare("SELECT count(*) as count FROM jobs WHERE status = 'PROCESSING'").get() as any).count;
+  const activeDrafts = (db.prepare("SELECT count(*) as count FROM drafts WHERE status = 'DRAFT'").get() as any).count;
 
   res.json({
     received: totalReceived,
@@ -587,7 +706,9 @@ app.get('/api/demo/metrics', (req, res) => {
     completed: counts.COMPLETED || 0,
     failed: counts.FAILED || 0,
     activeWorkers,
+    activeDrafts,
     workerConfig,
+    mockDependencyState,
     averageQueueSeconds: Math.round((workerConfig.delayMs / (workerConfig.concurrency * 1000)) * 10) / 10
   });
 });
@@ -611,8 +732,9 @@ app.post('/api/demo/reset', (req, res) => {
       DELETE FROM acknowledgements;
       DELETE FROM jobs;
       DELETE FROM returns;
+      DELETE FROM drafts;
     `);
-    res.json({ success: true, message: 'Queue and all submissions have been reset to 0.' });
+    res.json({ success: true, message: 'Queue, drafts, and all submissions have been reset to 0.' });
   } catch (err) {
     res.status(500).json({ message: 'Reset failed' });
   }
@@ -631,10 +753,18 @@ app.post('/api/demo/seed', (req, res) => {
 // Persistent Background Worker Tick
 function runWorkerTick() {
   try {
+    // Graceful Dependency Handling (Feature 7):
+    // If downstream service is UNAVAILABLE, workers pause processing safely. Submissions remain 100% safe in queue.
+    if (mockDependencyState === 'UNAVAILABLE') {
+      return;
+    }
+
     const now = new Date();
     const nowIso = now.toISOString();
 
-    // 1. Complete any PROCESSING jobs whose startedAt + delayMs <= now
+    const effectiveDelay = mockDependencyState === 'SLOW' ? workerConfig.delayMs * 2.5 : workerConfig.delayMs;
+
+    // 1. Complete any PROCESSING jobs whose startedAt + effectiveDelay <= now
     const processingJobs = db.prepare(`
       SELECT jobs.id as jobId, jobs.returnId, jobs.startedAt, returns.referenceId, returns.taxpayerName
       FROM jobs
@@ -645,7 +775,7 @@ function runWorkerTick() {
     for (const job of processingJobs) {
       if (!job.startedAt) continue;
       const startedTime = new Date(job.startedAt).getTime();
-      if (now.getTime() - startedTime >= workerConfig.delayMs) {
+      if (now.getTime() - startedTime >= effectiveDelay) {
         // Complete this job
         const shouldSimulateFailure = Math.random() < workerConfig.failureRate;
         const finalStatus = shouldSimulateFailure ? 'FAILED' : 'COMPLETED';

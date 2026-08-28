@@ -200,6 +200,55 @@ async function runE2ETests() {
   assert.strictEqual(metricsAfterReset.completed, 0, 'Completed must be 0 after reset');
   console.log('✓ Reset queue verified: total submissions, queue, processing, and completed reset to 0.\n');
 
+  // Test 11: Draft Autosave & Resume Filing API
+  console.log('Test 11: Draft Autosave & Resume Filing API...');
+  const testDraftId = 'DF-E2E-TEST-999';
+  const draftData = { taxpayerName: 'Autosave User', salary: 950000, tds: 45000, deductions: 120000, step: 2 };
+  const saveDraftRes = await (await fetch(`${BASE_URL}/api/drafts/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ draftId: testDraftId, data: draftData })
+  })).json();
+  assert.strictEqual(saveDraftRes.success, true);
+
+  const fetchedDraft = await (await fetch(`${BASE_URL}/api/drafts/${testDraftId}`)).json();
+  assert.strictEqual(fetchedDraft.draftId, testDraftId);
+  assert.strictEqual(fetchedDraft.data.taxpayerName, 'Autosave User');
+  assert.strictEqual(fetchedDraft.data.salary, 950000);
+  console.log('✓ Draft autosave & resume retrieval verified.\n');
+
+  // Test 12: Ambiguous Submission Recovery by Submission Key
+  console.log('Test 12: Ambiguous Submission Key Lookup...');
+  const recoveryKey = 'ambiguous-key-' + Date.now();
+  const subRecRes = await (await fetch(`${BASE_URL}/api/returns/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': recoveryKey },
+    body: JSON.stringify({ ...validPayload, idempotencyKey: recoveryKey })
+  })).json();
+  
+  const foundRec = await (await fetch(`${BASE_URL}/api/returns/by-key/${recoveryKey}`)).json();
+  assert.strictEqual(foundRec.found, true);
+  assert.strictEqual(foundRec.referenceId, subRecRes.referenceId);
+  console.log(`✓ Ambiguous submission lookup recovered existing submission ${foundRec.referenceId}.\n`);
+
+  // Test 13: Downstream Dependency State Control
+  console.log('Test 13: Downstream Dependency Simulator (Graceful Failure)...');
+  await fetch(`${BASE_URL}/api/demo/dependency`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: 'UNAVAILABLE' })
+  });
+  const depCheck = await (await fetch(`${BASE_URL}/api/demo/dependency`)).json();
+  assert.strictEqual(depCheck.state, 'UNAVAILABLE');
+  
+  // Reset dependency to AVAILABLE
+  await fetch(`${BASE_URL}/api/demo/dependency`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: 'AVAILABLE' })
+  });
+  console.log('✓ Downstream dependency simulator verified.\n');
+
   console.log('=====================================================');
   console.log('🎉 ALL TAXFLOW E2E TESTS PASSED WITH 100% SUCCESS!');
   console.log('=====================================================');
